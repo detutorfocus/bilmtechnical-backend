@@ -1,0 +1,21 @@
+# ADD THESE TWO IMPORTS near your other router imports in app/main.py:
+
+from app.routers.public_quotes import router as public_quotes_router
+from app.routers.chat import router as chat_router
+
+
+# ADD THESE TWO LINES where you register your other routers
+# (alongside your existing app.include_router(...) calls):
+
+app.include_router(public_quotes_router, prefix=PREFIX)
+app.include_router(chat_router,          prefix=PREFIX)
+
+
+# That's it — no other changes needed in main.py.
+# This adds:
+#   GET  /api/public/quotes/{quote_number}          (no auth)
+#   POST /api/public/quotes/{quote_number}/confirm   (no auth)
+#   WS   /api/chat/ws/visitor/{visitor_id}
+#   WS   /api/chat/ws/admin/{token}
+#   GET  /api/chat/history/{visitor_id}
+#   GET  /api/chat/active-visitors
