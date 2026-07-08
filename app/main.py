@@ -56,23 +56,16 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ─── CORS — registered BEFORE routers so it applies to redirects too ─────────
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "http://localhost:4173",
-    "http://localhost:8080",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:3000",
-    settings.FRONTEND_URL,
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=[
+        "https://bilmtechnical.com",
+        "https://www.bilmtechnical.com",
+        settings.FRONTEND_URL,
+    ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
 # ─── Static files ─────────────────────────────────────────────────────────────
