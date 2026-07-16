@@ -128,6 +128,13 @@ class User(Base):
     client_id       = Column(ForeignKey("clients.id"), nullable=True)
     created_at      = Column(DateTime, default=datetime.utcnow)
 
+    # ── Email-based OTP (2FA) ──────────────────────────────────────────────
+    # Both nullable — a user has no pending OTP most of the time. Set on
+    # POST /auth/login (step 1), consumed and cleared on POST /auth/verify-otp
+    # (step 2). See app/routers/auth.py for the full flow.
+    otp_code        = Column(String(6), nullable=True)
+    otp_expires_at  = Column(DateTime, nullable=True)
+
     client          = relationship("Client", back_populates="user", uselist=False)
 
 
