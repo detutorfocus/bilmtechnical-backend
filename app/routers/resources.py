@@ -595,7 +595,30 @@ async def schedule_maintenance(
     payload: MaintenanceCreate,
     db: AsyncSession = Depends(get_db), _: User = Depends(require_staff_or_admin),
 ):
-    record = MaintenanceRecord(**payload.model_dump())
+    """
+    FIX for: TypeError: 'notes' is an invalid keyword argument for MaintenanceRecord
+
+    ROOT CAUSE (confirmed against your actual schemas/__init__.py):
+    MaintenanceCreate has a `notes` field, but the MaintenanceRecord
+    SQLAlchemy model has no `notes` column — it has `report` instead.
+    The previous code did `MaintenanceRecord(**payload.model_dump())`,
+    blindly unpacking every schema field as a constructor kwarg. Any
+    schema field with no matching model column throws a hard TypeError
+    at the ORM layer, before anything reaches the database.
+
+    NOTE: MaintenanceUpdate (used by the PATCH endpoints below) already
+    correctly uses `report`, not `notes` — so update_maintenance and
+    complete_maintenance do NOT have this bug and do not need the same
+    fix. Only this creation endpoint was affected.
+    """
+    record = MaintenanceRecord(
+        rental_id=payload.rental_id,
+        equipment_id=payload.equipment_id,
+        maint_type=payload.maint_type,
+        technician=payload.technician,
+        scheduled_date=payload.scheduled_date,
+        report=payload.notes,  # schema "notes" -> model "report"
+    )
     db.add(record)
     await db.commit()
     await db.refresh(record)

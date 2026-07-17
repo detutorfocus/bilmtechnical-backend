@@ -2,7 +2,7 @@
 Company Settings — admin-editable key/value store.
 Replaces all hardcoded company info across templates and responses.
 """
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -97,20 +97,52 @@ async def update_setting(
 
 @router.put("/bulk", response_model=List[SettingItem])
 async def bulk_update_settings(
-    payload: Dict[str, str],
+    payload: Dict[str, Any],
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """Update multiple settings at once."""
+    """
+    Update multiple settings at once.
+
+    FIX for: 422 Unprocessable Entity on this endpoint.
+
+    ROOT CAUSE: this endpoint required `Dict[str, str]` — every value in
+    the payload had to already be a JSON string. But several of your
+    ALLOWED_KEYS are numeric-flavored settings (years_experience,
+    projects_completed, fleet_size, staff_count). If the frontend's form
+    renders any of these with <input type="number">, React/JS serializes
+    that field as a JSON number (e.g. 5), not a string ("5"). Pydantic's
+    strict `Dict[str, str]` type then rejects the WHOLE request with a
+    422, even though only one field was the wrong type — and the error
+    response doesn't clearly point at settings.py from the frontend's
+    perspective, since the failure happens at FastAPI's validation layer
+    before your endpoint code ever runs.
+
+    FIX: accept `Dict[str, Any]` and explicitly coerce every value to a
+    string before storage. A settings key/value store conceptually holds
+    text either way (CompanySettings.value is a String column), so this
+    coercion is safe and matches the actual data model — it does not
+    silently accept genuinely wrong data, it just stops being needlessly
+    strict about int vs str when the destination column is a string
+    regardless.
+    """
     invalid = [k for k in payload if k not in ALLOWED_KEYS]
     if invalid:
         raise HTTPException(status_code=400, detail=f"Unknown keys: {invalid}")
+
+    # Coerce every value to string explicitly. None/null becomes "" rather
+    # than the literal string "None", which would otherwise display
+    # incorrectly on the website wherever this setting is rendered.
+    coerced_payload: Dict[str, str] = {
+        k: ("" if v is None else str(v))
+        for k, v in payload.items()
+    }
 
     result = await db.execute(select(CompanySettings))
     existing = {r.key: r for r in result.scalars().all()}
 
     updated = []
-    for key, value in payload.items():
+    for key, value in coerced_payload.items():
         if key in existing:
             existing[key].value = value
             updated.append(existing[key])
