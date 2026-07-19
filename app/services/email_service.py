@@ -467,4 +467,3 @@ def send_template_email_sync(
     db_session.add(log)
     db_session.commit()
     return log
-  
