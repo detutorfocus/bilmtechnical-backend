@@ -29,9 +29,19 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
     # ── Email ──────────────────────────────────────────────────────────────────
-    # Choose ONE provider: sendgrid | smtp
-    EMAIL_PROVIDER: str = "smtp"               # "sendgrid" or "smtp"
+    # Choose ONE provider: sendgrid | smtp | brevo_api
+    #
+    # brevo_api sends over Brevo's HTTPS REST API (port 443) instead of raw
+    # SMTP (port 587). This exists specifically because Render.com's FREE
+    # web service tier blocks all outbound traffic on SMTP ports 25/465/587
+    # as an anti-spam policy — confirmed directly in Render's own changelog.
+    # HTTPS on 443 is never blocked (the whole platform would break), so this
+    # is the free-tier-compatible way to send transactional email from Render
+    # without upgrading to a paid instance. Uses the SAME Brevo account, just
+    # a different API key (from Brevo's "API Keys" tab, NOT the SMTP tab).
+    EMAIL_PROVIDER: str = "smtp"               # "sendgrid", "smtp", or "brevo_api"
     SENDGRID_API_KEY: str = ""
+    BREVO_API_KEY: str = ""
 
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
