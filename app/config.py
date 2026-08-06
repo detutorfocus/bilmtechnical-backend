@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_USE_TLS: bool = True
 
+
+    CLOUDINARY_CLOUD_NAME: str = "fhyc4ygt"
+    CLOUDINARY_API_KEY: str = "867811982485794"
+    CLOUDINARY_API_SECRET: str = "RJh4ZH_-0u7sSIF1XLGqAIF4ydk"
+
+
     @property
     def smtp_port_int(self) -> int:
         """Defensive cast — env vars always arrive as strings from Docker."""
