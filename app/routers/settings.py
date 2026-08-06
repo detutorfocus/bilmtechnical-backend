@@ -47,7 +47,6 @@ async def get_all_settings(
     result = await db.execute(select(CompanySettings))
     rows = result.scalars().all()
     existing = {r.key: r for r in rows}
-    # Return all allowed keys (with null value if not yet set)
     return [
         SettingItem(
             key=k,
@@ -104,35 +103,37 @@ async def bulk_update_settings(
     """
     Update multiple settings at once.
 
-    FIX for: 422 Unprocessable Entity on this endpoint.
+    ROOT CAUSE OF THE 422 (confirmed from the actual live error, not guessed):
+    Pydantic reported `"loc": ["body", "value"], "msg": "Field required"` —
+    meaning whatever version of this endpoint was actually running on Render
+    expected a wrapper shape like `{"value": {...}}`, NOT a flat dict of
+    settings. The frontend correctly sends a flat object
+    (`{"company_name": "...", "years_experience": "20+", ...}`), so the
+    request was rejected before this function body ever ran.
 
-    ROOT CAUSE: this endpoint required `Dict[str, str]` — every value in
-    the payload had to already be a JSON string. But several of your
-    ALLOWED_KEYS are numeric-flavored settings (years_experience,
-    projects_completed, fleet_size, staff_count). If the frontend's form
-    renders any of these with <input type="number">, React/JS serializes
-    that field as a JSON number (e.g. 5), not a string ("5"). Pydantic's
-    strict `Dict[str, str]` type then rejects the WHOLE request with a
-    422, even though only one field was the wrong type — and the error
-    response doesn't clearly point at settings.py from the frontend's
-    perspective, since the failure happens at FastAPI's validation layer
-    before your endpoint code ever runs.
+    THIS VERSION accepts `payload: Dict[str, Any]` directly — a flat dict,
+    matching exactly what the frontend already sends. No wrapper, no
+    required "value" key.
 
-    FIX: accept `Dict[str, Any]` and explicitly coerce every value to a
-    string before storage. A settings key/value store conceptually holds
-    text either way (CompanySettings.value is a String column), so this
-    coercion is safe and matches the actual data model — it does not
-    silently accept genuinely wrong data, it just stops being needlessly
-    strict about int vs str when the destination column is a string
-    regardless.
+    OPTIONAL FIELDS: per explicit instruction, this endpoint does NOT
+    require every ALLOWED_KEYS entry to be present. Admins can save a
+    partial update (e.g. just company_phone) without being blocked by
+    missing/blank values for unrelated fields — payload.items() only
+    processes whatever keys were actually sent.
+
+    TYPE COERCION: every value is explicitly cast to str before storage.
+    CompanySettings.value is a String column, so "20+", "10+" etc. (as
+    seen in the actual request body from the live site) are handled
+    correctly regardless of whether the frontend ever sends a non-string
+    JS type for a numeric-looking field.
     """
     invalid = [k for k in payload if k not in ALLOWED_KEYS]
     if invalid:
         raise HTTPException(status_code=400, detail=f"Unknown keys: {invalid}")
 
-    # Coerce every value to string explicitly. None/null becomes "" rather
-    # than the literal string "None", which would otherwise display
-    # incorrectly on the website wherever this setting is rendered.
+    # Coerce every value to string; None/null becomes "" rather than the
+    # literal string "None". Empty strings are stored as-is (optional
+    # fields left blank are valid, not an error).
     coerced_payload: Dict[str, str] = {
         k: ("" if v is None else str(v))
         for k, v in payload.items()
