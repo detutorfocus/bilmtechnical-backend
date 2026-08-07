@@ -72,6 +72,17 @@ class UserLogin(BaseModel):
     email:    EmailStr
     password: str
 
+# ── Email OTP (2FA) ──────────────────────────────────────────────────────────
+# LoginPending is returned by step 1 (POST /auth/login) instead of a Token —
+# no JWT is issued until the code is verified via step 2.
+class LoginPending(BaseModel):
+    otp_required: bool = True
+    message:      str
+
+class OTPVerify(BaseModel):
+    email: EmailStr
+    code:  str
+
 class UserCreate(BaseModel):
     email:     EmailStr
     password:  str = Field(min_length=8)

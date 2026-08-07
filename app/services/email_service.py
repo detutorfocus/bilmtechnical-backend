@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+import httpx
 from jinja2 import BaseLoader, Environment
 from sqlalchemy import select
 
@@ -171,6 +172,98 @@ def _sendgrid_send_sync(
         return False, msg
 
 
+def _brevo_api_send_sync(
+    to_email: str,
+    to_name: str,
+    subject: str,
+    html_body: str,
+    text_body: Optional[str] = None,
+) -> tuple[bool, str]:
+    """
+    Synchronous Brevo send via their HTTPS REST API — NOT smtplib.
+
+    WHY THIS EXISTS: Render.com's free web service tier blocks all
+    outbound traffic on SMTP ports (25, 465, 587) as an anti-spam
+    measure — confirmed in Render's own changelog. This produces
+    "OSError: [Errno 101] Network is unreachable" from smtplib, even
+    with fully correct SMTP credentials that work everywhere else
+    (locally, in Gmail's "Send As", etc.) — it's a network-level block,
+    not a credentials problem, and no amount of fixing SMTP_HOST/
+    SMTP_PORT/SMTP_PASSWORD can work around it.
+
+    This function sends over HTTPS (port 443) instead, which Render
+    never blocks (doing so would break the entire platform, including
+    Render's own services). Uses requests via httpx, run synchronously
+    in the same thread-pool pattern as _smtp_send_sync — safe to call
+    from both the async wrapper below and the Celery sync path.
+
+    AUTH: needs BREVO_API_KEY (from Brevo's "API Keys" tab under
+    SMTP & API — a DIFFERENT key from the SMTP key used by
+    _smtp_send_sync above). Set in .env / Render environment variables.
+    """
+    if not settings.BREVO_API_KEY:
+        msg = "BREVO_API_KEY is not set. Get one from Brevo → SMTP & API → API Keys tab (not the SMTP tab)."
+        print(f"[EMAIL][CONFIG ERROR] {msg}")
+        return False, msg
+    if not settings.EMAIL_FROM_ADDRESS:
+        msg = "EMAIL_FROM_ADDRESS is not set in .env"
+        print(f"[EMAIL][CONFIG ERROR] {msg}")
+        return False, msg
+
+    payload = {
+        "sender":      {"name": settings.EMAIL_FROM_NAME, "email": settings.EMAIL_FROM_ADDRESS},
+        "to":          [{"email": to_email, "name": to_name or to_email}],
+        "subject":     subject,
+        "htmlContent": html_body,
+    }
+    if text_body:
+        payload["textContent"] = text_body
+
+    try:
+        # timeout=30 matches the same 30s timeout used by _smtp_send_sync
+        response = httpx.post(
+            "https://api.brevo.com/v3/smtp/email",
+            json=payload,
+            headers={
+                "api-key":      settings.BREVO_API_KEY,
+                "Content-Type": "application/json",
+                "Accept":       "application/json",
+            },
+            timeout=30,
+        )
+        if response.status_code in (200, 201):
+            print(f"[EMAIL][BREVO API OK] Sent '{subject}' → {to_email}")
+            return True, ""
+
+        # Brevo returns structured JSON errors — surface the real message
+        # rather than a bare status code, same detail level as the SMTP
+        # exception handlers below.
+        try:
+            detail = response.json()
+            error_text = detail.get("message", str(detail))
+        except Exception:
+            error_text = response.text
+
+        if response.status_code == 401:
+            msg = f"Brevo API authentication failed — check BREVO_API_KEY is correct and active. Detail: {error_text}"
+        elif response.status_code == 400:
+            msg = f"Brevo API rejected the request — often means the sender email isn't verified in Brevo yet. Detail: {error_text}"
+        else:
+            msg = f"Brevo API returned status {response.status_code}: {error_text}"
+
+        print(f"[EMAIL][BREVO API ERROR] {msg}")
+        return False, msg
+
+    except httpx.TimeoutException:
+        msg = "Brevo API request timed out after 30s."
+        print(f"[EMAIL][TIMEOUT] {msg}")
+        return False, msg
+    except Exception as e:
+        msg = f"Unexpected error calling Brevo API: {e}\n{traceback.format_exc()}"
+        print(f"[EMAIL][UNKNOWN ERROR] {msg}")
+        return False, msg
+
+
 # ─── Async wrapper (for FastAPI routes) ───────────────────────────────────────
 
 async def send_email_raw(
@@ -188,6 +281,8 @@ async def send_email_raw(
     loop = asyncio.get_event_loop()
     if settings.EMAIL_PROVIDER == "sendgrid":
         fn = _sendgrid_send_sync
+    elif settings.EMAIL_PROVIDER == "brevo_api":
+        fn = _brevo_api_send_sync
     else:
         fn = _smtp_send_sync
 
@@ -214,6 +309,8 @@ def send_email_raw_sync(
     """
     if settings.EMAIL_PROVIDER == "sendgrid":
         return _sendgrid_send_sync(to_email, to_name, subject, html_body, text_body)
+    elif settings.EMAIL_PROVIDER == "brevo_api":
+        return _brevo_api_send_sync(to_email, to_name, subject, html_body, text_body)
     return _smtp_send_sync(to_email, to_name, subject, html_body, text_body)
 
 

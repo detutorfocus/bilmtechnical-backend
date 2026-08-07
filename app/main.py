@@ -27,6 +27,7 @@ from app.routers.resources import (
 from app.routers.public_quotes import router as public_quotes_router
 from app.routers.chat import router as chat_router
 
+from app.routers.upload import router as upload_router
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -56,23 +57,16 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ─── CORS — registered BEFORE routers so it applies to redirects too ─────────
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:3000",
-    "http://localhost:4173",
-    "http://localhost:8080",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:3000",
-    settings.FRONTEND_URL,
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=[
+        "https://bilmtechnical.com",
+        "https://www.bilmtechnical.com",
+        settings.FRONTEND_URL,
+    ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
 # ─── Static files ─────────────────────────────────────────────────────────────
@@ -98,6 +92,8 @@ app.include_router(email_logs_router,   prefix=PREFIX)
 app.include_router(reports_router,      prefix=PREFIX)
 app.include_router(public_quotes_router, prefix=PREFIX)
 app.include_router(chat_router,          prefix=PREFIX)
+app.include_router(upload_router, prefix=PREFIX)
+
 
 
 @app.get("/health", tags=["Health"])
