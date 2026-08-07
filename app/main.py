@@ -27,6 +27,7 @@ from app.routers.resources import (
 from app.routers.public_quotes import router as public_quotes_router
 from app.routers.chat import router as chat_router
 
+from app.routers.upload import router as upload_router
 
 
 limiter = Limiter(key_func=get_remote_address)
@@ -91,6 +92,8 @@ app.include_router(email_logs_router,   prefix=PREFIX)
 app.include_router(reports_router,      prefix=PREFIX)
 app.include_router(public_quotes_router, prefix=PREFIX)
 app.include_router(chat_router,          prefix=PREFIX)
+app.include_router(upload_router, prefix=PREFIX)
+
 
 
 @app.get("/health", tags=["Health"])
